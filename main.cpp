@@ -1,355 +1,176 @@
-#include <GL/glut.h>
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <windows.h>
+#include <GL\glew.h>
+#include <GLFW\glfw3.h>
+#include <string>
+#include <iostream>
+#include <fstream>
+#include <cmath>
+#include <glm\glm.hpp>
+#include <glm\gtc\type_ptr.hpp>
+#include <glm\gtc\matrix_transform.hpp>
 
-#define pi (2 * acos(0.0))
+#define numVAOs 1
+#define numVBOs 2 
 
-double cameraHeight;
-double cameraAngle;
-int drawgrid;
-int drawaxes;
-double angle;
+using namespace std;
 
-struct point {
-  double x, y, z;
-};
+std::string readShader(const char *filePath);
+GLuint createShaderProgram(const char *file_vs, const char *file_fs);
 
-void drawAxes() {
-  if (drawaxes == 1) {
-    glColor3f(1.0, 1.0, 1.0);
-    glBegin(GL_LINES);
-    {
-      glVertex3f(100, 0, 0);
-      glVertex3f(-100, 0, 0);
+float cameraX, cameraY, cameraZ;
+float cubeLocX, cubeLocY, cubeLocZ;
+GLuint renderingProgram;
+GLuint vao[numVAOs];
+GLuint vbo[numVBOs];
 
-      glVertex3f(0, -100, 0);
-      glVertex3f(0, 100, 0);
+GLuint mvLoc, projLoc;
+int width, heigth;
+float aspect;
+glm::mat4 pMat, vMat, mMat, mvMat;
+glm::mat4 tMat, rMat;
 
-      glVertex3f(0, 0, 100);
-      glVertex3f(0, 0, -100);
+void setupVertices(void) {
+	float vertexPositions[108] = {
+        -1.0f,  1.0f, -1.0f, -1.0f, -1.0f, -1.0f,  1.0f, -1.0f, -1.0f,
+         1.0f, -1.0f, -1.0f,  1.0f,  1.0f, -1.0f, -1.0f,  1.0f, -1.0f,
+         1.0f, -1.0f, -1.0f,  1.0f, -1.0f,  1.0f,  1.0f,  1.0f, -1.0f,
+         1.0f, -1.0f,  1.0f,  1.0f,  1.0f,  1.0f,  1.0f,  1.0f, -1.0f,
+         1.0f, -1.0f,  1.0f, -1.0f, -1.0f,  1.0f,  1.0f,  1.0f,  1.0f,
+        -1.0f, -1.0f,  1.0f, -1.0f,  1.0f,  1.0f,  1.0f,  1.0f,  1.0f,
+        -1.0f, -1.0f,  1.0f, -1.0f, -1.0f, -1.0f, -1.0f,  1.0f,  1.0f,
+        -1.0f, -1.0f, -1.0f, -1.0f,  1.0f, -1.0f, -1.0f,  1.0f,  1.0f,
+        -1.0f, -1.0f,  1.0f,  1.0f, -1.0f,  1.0f,  1.0f, -1.0f, -1.0f,
+         1.0f, -1.0f, -1.0f, -1.0f, -1.0f, -1.0f, -1.0f, -1.0f,  1.0f,
+        -1.0f,  1.0f, -1.0f,  1.0f,  1.0f, -1.0f,  1.0f,  1.0f,  1.0f,
+         1.0f,  1.0f,  1.0f, -1.0f,  1.0f,  1.0f, -1.0f,  1.0f, -1.0f,
+	};
+
+    glGenVertexArrays(1, vao);
+    glBindVertexArray(vao[0]);
+
+    glGenBuffers(numVBOs, vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo[0]);
+
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertexPositions), vertexPositions, GL_STATIC_DRAW);
+}
+
+void init(GLFWwindow *window) {
+    renderingProgram = createShaderProgram("vertShader.glsl", "fragShader.glsl");
+	cameraX = 0.0f;
+	cameraY = 0.0f;
+	cameraZ = 8.0f;
+	cubeLocX = 0.0f;
+	cubeLocY = -2.0f;
+	cubeLocZ = 0.0f;
+	setupVertices();
+}
+
+void display(GLFWwindow *window, double currentTime) {
+    glClear(GL_DEPTH_BUFFER_BIT);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    tMat = glm::translate(
+        glm::mat4(1.0f),
+        glm::vec3(sin(0.35f * currentTime) * 2.0f, cos(0.52f * currentTime)*2.0f, 
+        sin (0.7f * currentTime)* 2.0f)
+        );
+
+    rMat = glm::rotate(
+        glm::mat4(1.0f),
+        1.75f * (float)currentTime,
+        glm::vec3(0.0f, 1.0f, 0.0f)
+        );
+
+    rMat = glm::rotate(rMat, 1.75f*(float)currentTime, glm::vec3(1.0f, 0.0f, 0.0f));
+    rMat = glm::rotate(rMat, 1.75f*(float)currentTime, glm::vec3(0.0f, 0.0f, 1.0f));
+
+    mMat = tMat * rMat;
+
+    glUseProgram(renderingProgram);
+
+    mvLoc = glGetUniformLocation(renderingProgram, "mv_matrix");
+    projLoc = glGetUniformLocation(renderingProgram, "proj_matrix");
+
+    glfwGetFramebufferSize(window, &width, &heigth);
+    aspect = (float)width / (float)heigth;
+    pMat = glm::perspective(1.0472f, aspect, 0.1f, 1000.0f);
+
+    vMat = glm::translate(glm::mat4(1.0f), glm::vec3(-cameraX, -cameraY, -cameraZ));
+    //mMat = glm::translate(glm::mat4(1.0f), glm::vec3(cubeLocX, cubeLocY, cubeLocZ));
+    mvMat = vMat * mMat;
+
+	glUniformMatrix4fv(mvLoc, 1, GL_FALSE, glm::value_ptr(mvMat));
+	glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(pMat));
+
+	glBindBuffer(GL_ARRAY_BUFFER, vbo[0]);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+	glEnableVertexAttribArray(0);
+
+	glEnable(GL_DEPTH_TEST);
+	glDepthFunc(GL_LEQUAL);
+
+	glPointSize(10.0);
+	glDrawArrays(GL_POINTS, 0, 36);
+	glDrawArrays(GL_TRIANGLES, 0, 36);
+}
+
+int main() {
+
+    if (!glfwInit()) exit(EXIT_FAILURE);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, true);  
+
+    GLFWwindow * window = glfwCreateWindow(600, 600, "Example Modern OpenGL", NULL, NULL);
+    glfwMakeContextCurrent(window);
+    if (glewInit() != GLEW_OK) exit(EXIT_FAILURE);
+    cout<<"GL_VERSION: "<<glGetString(GL_VERSION)<<endl;
+    glfwSwapInterval(1);
+    init(window);
+
+    while(!glfwWindowShouldClose(window)) {
+        display(window, glfwGetTime());
+        glfwSwapBuffers(window);
+        glfwPollEvents();
     }
-    glEnd();
-  }
+
+    glfwDestroyWindow(window);
+    glfwTerminate();
+    exit(EXIT_SUCCESS);
 }
 
-void drawGrid() {
-  int i;
-  if (drawgrid == 1) {
-    glColor3f(0.6, 0.6, 0.6);  // grey
-    glBegin(GL_LINES);
-    {
-      for (i = -8; i <= 8; i++) {
-        if (i == 0)
-          continue;  // SKIP the MAIN axes
+std::string readShader(const char *filePath) {
+    std::string content;
+    std::ifstream fileStream(filePath, std::ios::in);
+    std::string line = "";
 
-        // lines parallel to Y-axis
-        glVertex3f(i * 10, -90, 0);
-        glVertex3f(i * 10, 90, 0);
-
-        // lines parallel to X-axis
-        glVertex3f(-90, i * 10, 0);
-        glVertex3f(90, i * 10, 0);
-      }
+    while(getline(fileStream, line)) {
+        content.append(line + "\n");
     }
-    glEnd();
-  }
+
+    fileStream.close();
+    return content;
 }
+unsigned int createShaderProgram(const char *file_vs, const char *file_fs ) {
+    std::string str_src_vs = readShader(file_vs);
+    std::string str_src_fs = readShader(file_fs);
 
-void drawSquare(double a) {
-  // glColor3f(1.0,0.0,0.0);
-  glBegin(GL_QUADS);
-  {
-    glVertex3f(a, a, 2);
-    glVertex3f(a, -a, 2);
-    glVertex3f(-a, -a, 2);
-    glVertex3f(-a, a, 2);
-  }
-  glEnd();
-}
+    const char *src_vs = str_src_vs.c_str();
+    const char *src_fs = str_src_fs.c_str();
 
-void drawCircle(double radius, int segments) {
-  int i;
-  struct point points[100];
-  glColor3f(0.7, 0.7, 0.7);
-  // generate points
-  for (i = 0; i <= segments; i++) {
-    points[i].x = radius * cos(((double)i / (double)segments) * 2 * pi);
-    points[i].y = radius * sin(((double)i / (double)segments) * 2 * pi);
-  }
-  // draw segments using generated points
-  for (i = 0; i < segments; i++) {
-    glBegin(GL_LINES);
-    {
-      glVertex3f(points[i].x, points[i].y, 0);
-      glVertex3f(points[i + 1].x, points[i + 1].y, 0);
-    }
-    glEnd();
-  }
-}
+    unsigned int vs, fs; 
+    vs = glCreateShader(GL_VERTEX_SHADER);
+    fs = glCreateShader(GL_FRAGMENT_SHADER);
 
-void drawCone(double radius, double height, int segments) {
-  int i;
-  double shade;
-  struct point points[100];
-  // generate points
-  for (i = 0; i <= segments; i++) {
-    points[i].x = radius * cos(((double)i / (double)segments) * 2 * pi);
-    points[i].y = radius * sin(((double)i / (double)segments) * 2 * pi);
-  }
-  // draw triangles using generated points
-  for (i = 0; i < segments; i++) {
-    // create shading effect
-    if (i < segments / 2)
-      shade = 2 * (double)i / (double)segments;
-    else
-      shade = 2 * (1.0 - (double)i / (double)segments);
-    glColor3f(shade, shade, shade);
+    glShaderSource(vs, 1, &(src_vs), NULL);
+    glShaderSource(fs, 1, &(src_fs), NULL);
 
-    glBegin(GL_TRIANGLES);
-    {
-      glVertex3f(0, 0, height);
-      glVertex3f(points[i].x, points[i].y, 0);
-      glVertex3f(points[i + 1].x, points[i + 1].y, 0);
-    }
-    glEnd();
-  }
-}
+    glCompileShader(vs);
+    glCompileShader(fs);
 
-void drawSphere(double radius, int slices, int stacks) {
-  struct point points[100][100];
-  int i, j;
-  double h, r;
-  // generate points
-  for (i = 0; i <= stacks; i++) {
-    h = radius * sin(((double)i / (double)stacks) * (pi / 2));
-    r = radius * cos(((double)i / (double)stacks) * (pi / 2));
-    for (j = 0; j <= slices; j++) {
-      points[i][j].x = r * cos(((double)j / (double)slices) * 2 * pi);
-      points[i][j].y = r * sin(((double)j / (double)slices) * 2 * pi);
-      points[i][j].z = h;
-    }
-  }
-  // draw quads using generated points
-  for (i = 0; i < stacks; i++) {
-    glColor3f((double)i / (double)stacks, (double)i / (double)stacks, (double)i / (double)stacks);
-    for (j = 0; j < slices; j++) {
-      glBegin(GL_QUADS);
-      {
-        // upper hemisphere
-        glVertex3f(points[i][j].x, points[i][j].y, points[i][j].z);
-        glVertex3f(points[i][j + 1].x, points[i][j + 1].y, points[i][j + 1].z);
-        glVertex3f(points[i + 1][j + 1].x, points[i + 1][j + 1].y, points[i + 1][j + 1].z);
-        glVertex3f(points[i + 1][j].x, points[i + 1][j].y, points[i + 1][j].z);
-        // lower hemisphere
-        glVertex3f(points[i][j].x, points[i][j].y, -points[i][j].z);
-        glVertex3f(points[i][j + 1].x, points[i][j + 1].y, -points[i][j + 1].z);
-        glVertex3f(points[i + 1][j + 1].x, points[i + 1][j + 1].y, -points[i + 1][j + 1].z);
-        glVertex3f(points[i + 1][j].x, points[i + 1][j].y, -points[i + 1][j].z);
-      }
-      glEnd();
-    }
-  }
-}
+    unsigned int program = glCreateProgram();
+    glAttachShader(program, vs);
+    glAttachShader(program, fs);
+    glLinkProgram(program);
 
-void drawSS() {
-  glColor3f(1, 0, 0);
-  drawSquare(20);
-
-  glRotatef(angle, 0, 0, 1);
-  glTranslatef(110, 0, 0);
-  glRotatef(2 * angle, 0, 0, 1);
-  glColor3f(0, 1, 0);
-  drawSquare(15);
-
-  glPushMatrix();
-  {
-    glRotatef(angle, 0, 0, 1);
-    glTranslatef(60, 0, 0);
-    glRotatef(2 * angle, 0, 0, 1);
-    glColor3f(0, 0, 1);
-    drawSquare(10);
-  }
-  glPopMatrix();
-
-  glRotatef(3 * angle, 0, 0, 1);
-  glTranslatef(40, 0, 0);
-  glRotatef(4 * angle, 0, 0, 1);
-  glColor3f(1, 1, 0);
-  drawSquare(5);
-}
-
-void keyboardListener(unsigned char key, int x, int y) {
-  switch (key) {
-    case '1':
-      drawgrid = 1 - drawgrid;
-      break;
-
-    default:
-      break;
-  }
-}
-
-void specialKeyListener(int key, int x, int y) {
-  switch (key) {
-    case GLUT_KEY_DOWN:  // down arrow key
-      cameraHeight -= 3.0;
-      break;
-    case GLUT_KEY_UP:  // up arrow key
-      cameraHeight += 3.0;
-      break;
-
-    case GLUT_KEY_RIGHT:
-      cameraAngle += 0.03;
-      break;
-    case GLUT_KEY_LEFT:
-      cameraAngle -= 0.03;
-      break;
-
-    case GLUT_KEY_PAGE_UP:
-      break;
-    case GLUT_KEY_PAGE_DOWN:
-      break;
-
-    case GLUT_KEY_INSERT:
-      break;
-
-    case GLUT_KEY_HOME:
-      break;
-    case GLUT_KEY_END:
-      break;
-
-    default:
-      break;
-  }
-}
-
-void mouseListener(int button, int state, int x, int y) {  // x, y is the x-y of the screen (2D)
-  switch (button) {
-    case GLUT_LEFT_BUTTON:
-      if (state == GLUT_DOWN) {  // 2 times?? in ONE click? -- solution is checking DOWN or UP
-        drawaxes = 1 - drawaxes;
-      }
-      break;
-
-    case GLUT_RIGHT_BUTTON:
-      //........
-      break;
-
-    case GLUT_MIDDLE_BUTTON:
-      //........
-      break;
-
-    default:
-      break;
-  }
-}
-
-void display() {
-  // clear the display
-  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-  glClearColor(0, 0, 0, 0);  // color black
-  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-  /********************
-  / set-up camera here
-  ********************/
-  // load the correct matrix -- MODEL-VIEW matrix
-  glMatrixMode(GL_MODELVIEW);
-
-  // initialize the matrix
-  glLoadIdentity();
-
-  // now give three info
-  // 1. where is the camera (viewer)?
-  // 2. where is the camera looking?
-  // 3. Which direction is the camera's UP direction?
-
-  // gluLookAt(100,100,100,	0,0,0,	0,0,1);
-  // gluLookAt(200*cos(cameraAngle), 200*sin(cameraAngle), cameraHeight,		0,0,0,		0,0,1);
-  gluLookAt(0, 0, 200, 0, 0, 0, 0, 1, 0);
-
-  // again select MODEL-VIEW
-  glMatrixMode(GL_MODELVIEW);
-
-  /****************************
-  / Add your objects from here
-  ****************************/
-  // add objects
-
-  drawAxes();
-  drawGrid();
-
-  // glColor3f(1,0,0);
-  // drawSquare(10);
-
-  drawSS();
-
-  // drawCircle(30,24);
-
-  // drawCone(20,50,24);
-
-  // drawSphere(30,24,20);
-
-  // ADD this line in the end --- if you use double buffer (i.e. GL_DOUBLE)
-  glutSwapBuffers();
-}
-
-void animate() {
-  angle += 0.05;
-  // codes for any changes in Models, Camera
-  glutPostRedisplay();
-}
-
-void init() {
-  // codes for initialization
-  drawgrid = 0;
-  drawaxes = 1;
-  cameraHeight = 150.0;
-  cameraAngle = 1.0;
-  angle = 0;
-
-  // clear the screen
-  glClearColor(0, 0, 0, 0);
-
-  /************************
-  / set-up projection here
-  ************************/
-  // load the PROJECTION matrix
-  glMatrixMode(GL_PROJECTION);
-
-  // initialize the matrix
-  glLoadIdentity();
-
-  // give PERSPECTIVE parameters
-  gluPerspective(80, 1, 1, 1000.0);
-  // field of view in the Y (vertically)
-  // aspect ratio that determines the field of view in the X direction (horizontally)
-  // near distance
-  // far distance
-}
-
-int main(int argc, char **argv) {
-  glutInit(&argc, argv);
-  glutInitWindowSize(500, 500);
-  glutInitWindowPosition(0, 0);
-  glutInitDisplayMode(GLUT_DEPTH | GLUT_DOUBLE | GLUT_RGB);  // Depth, Double buffer, RGB color
-
-  glutCreateWindow("My OpenGL Program");
-
-  init();
-
-  glEnable(GL_DEPTH_TEST);  // enable Depth Testing
-
-  glutDisplayFunc(display);  // display callback function
-  glutIdleFunc(animate);     // what you want to do in the idle time (when no drawing is occuring)
-
-  glutKeyboardFunc(keyboardListener);
-  glutSpecialFunc(specialKeyListener);
-  glutMouseFunc(mouseListener);
-
-  glutMainLoop();  // The main loop of OpenGL
-
-  return 0;
+    return program;
 }
